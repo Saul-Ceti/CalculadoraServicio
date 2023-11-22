@@ -3,6 +3,7 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
 
@@ -10,9 +11,7 @@ public class CalculadoraGUI extends JFrame {
     private JTextField textField;
     private Socket serverSocket;
 
-    public CalculadoraGUI(Socket serverSocket) {
-        this.serverSocket = serverSocket;
-
+    public CalculadoraGUI() {
         setTitle("Calculadora");
         setSize(300, 400);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -76,25 +75,32 @@ public class CalculadoraGUI extends JFrame {
     private class IgualActionListener implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
-            try (ObjectOutputStream out = new ObjectOutputStream(serverSocket.getOutputStream())) {
-                out.writeObject(textField.getText());
-                out.flush();
-                textField.setText("");
-            } catch (Exception ex) {
+            try {
+                // Crea un nuevo socket cada vez que se presiona "="
+                Socket serverSocket = new Socket("localhost", 5000);
+                try (ObjectOutputStream out = new ObjectOutputStream(serverSocket.getOutputStream());
+                     ObjectInputStream in = new ObjectInputStream(serverSocket.getInputStream())) {
+
+                    // Enviar la operación al servidor
+                    out.writeObject(textField.getText());
+                    out.flush();
+
+                    // Esperar la respuesta del servidor
+                    String resultado = (String) in.readObject();
+
+                    // Mostrar el resultado en la calculadora
+                    textField.setText(resultado);
+
+                } finally {
+                    serverSocket.close();
+                }
+            } catch (IOException | ClassNotFoundException ex) {
                 ex.printStackTrace();
             }
         }
     }
 
     public static void main(String[] args) {
-        // Crear una instancia de la CalculadoraGUI
-        SwingUtilities.invokeLater(() -> {
-            try {
-                Socket serverSocket = new Socket("localhost", 5000);
-                new CalculadoraGUI(serverSocket);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        });
+        SwingUtilities.invokeLater(CalculadoraGUI::new);
     }
 }

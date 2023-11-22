@@ -6,6 +6,8 @@ import java.util.Map;
 public class ManejadorCliente implements Runnable {
     private Socket clienteSocket;
     private static Map<Socket, String> operaciones = new HashMap<>();
+    private static final Object lock = new Object();
+    private static boolean completado = false;
 
     public ManejadorCliente(Socket clienteSocket) {
         this.clienteSocket = clienteSocket;
@@ -17,28 +19,40 @@ public class ManejadorCliente implements Runnable {
             ObjectOutputStream out = new ObjectOutputStream(clienteSocket.getOutputStream());
             ObjectInputStream in = new ObjectInputStream(clienteSocket.getInputStream());
         ) {
-            String mensaje = (String) in.readObject();
-            operaciones.put(clienteSocket, mensaje);
 
-            if(operaciones.size() == 2){
-                //Obtener los 2 números y los operadores de las operaciones
-                double primerNumero = Double.parseDouble(operaciones.get(clienteSocket).substring(0, operaciones.get(clienteSocket).indexOf(" ")));
-                double segundoNumero = Double.parseDouble(operaciones.get(getOtroClienteSocket(clienteSocket)).substring(0, operaciones.get(getOtroClienteSocket(clienteSocket)).indexOf(" ")));
-                char operador1 = operaciones.get(clienteSocket).charAt(operaciones.get(clienteSocket).length() - 2);
-                char operador2 = operaciones.get(getOtroClienteSocket(clienteSocket)).charAt(operaciones.get(getOtroClienteSocket(clienteSocket)).length() - 2);
+                String mensaje = (String) in.readObject();
 
-                String resultadoCliente1 = realizarOperacion(primerNumero, segundoNumero, operador1);
-                String resultadoCliente2 = realizarOperacion(segundoNumero, primerNumero, operador2);
+                synchronized (lock) {
+                    operaciones.put(clienteSocket, mensaje);
 
-                //out.writeObject(resultadoCliente1);
-                //out.flush();
+                    while (operaciones.size() < 2) {
+                        try {
+                            lock.wait();
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
 
-                //ObjectOutputStream otroClienteOut = new ObjectOutputStream(getOtroClienteSocket(clienteSocket).getOutputStream());
-                //otroClienteOut.writeObject(resultadoCliente2);
-                //otroClienteOut.flush();
+                    //Obtener los 2 números y los operadores de las operaciones
+                    double primerNumero = Double.parseDouble(operaciones.get(clienteSocket).substring(0, operaciones.get(clienteSocket).indexOf(" ")));
+                    double segundoNumero = Double.parseDouble(operaciones.get(getOtroClienteSocket(clienteSocket)).substring(0, operaciones.get(getOtroClienteSocket(clienteSocket)).indexOf(" ")));
+                    char operador = operaciones.get(clienteSocket).charAt(operaciones.get(clienteSocket).length() - 2);
 
-                operaciones.clear();
-            }
+                    String resultadoCliente1 = realizarOperacion(primerNumero, segundoNumero, operador);
+
+                    out.writeObject(resultadoCliente1);
+                    out.flush();
+
+                    if (completado) {
+                        operaciones.clear();
+                        completado = false;
+                    } else {
+                        completado = true;
+                    }
+
+                    lock.notifyAll();
+                }
+
         } catch (IOException | ClassNotFoundException e) {
             e.printStackTrace();
             System.out.println("Error en la conexión con el cliente: " + e.getMessage());
